@@ -8,19 +8,21 @@ public class ServerClient
 {
     public int connectionID;
     public string playerName;
-
-
+    public Vector3 position;
 }
 
 public class Server : MonoBehaviour
 {
 
     private const int MAX_POS_CONNECTION = 10;
-    private int port = 5705;
+    private int port = 5701;
     private int hostID;
     private int webHostID;
     private int reliableChannel;
     private int unreliableChannel;
+    private float lastMovementUpdate;
+    private float movementUpdateRate = 0.5f;
+
     private List<ServerClient> clients = new List<ServerClient>();
     private bool isStarted = false;
     private byte error;
@@ -64,6 +66,9 @@ public class Server : MonoBehaviour
                     case "NAMEIS":
                         OnNameIs(connectionId, splitData[1]);
                         break;
+                    case "MYPOSITION":
+                        OnMyPosition(connectionId,float.Parse(splitData[1]), float.Parse(splitData[2]));
+                        break;
                     default:
                         Debug.Log("Invalid message " + msg);
                         break;
@@ -72,7 +77,17 @@ public class Server : MonoBehaviour
 
             case NetworkEventType.DisconnectEvent:
                 Debug.Log(connectionId + " has disconnected");//4
+                OnDisconnection(connectionId);
                 break;
+        }
+        if(Time.time - lastMovementUpdate > movementUpdateRate)
+        {
+            lastMovementUpdate = Time.time;
+            string m = "ASKPOSITION|";
+            foreach (ServerClient item in clients)
+                m += item.connectionID.ToString() + '%' + item.position.x.ToString() + '%' + item.position.y.ToString() + '|';
+            m.Trim('|');
+            Send(m, unreliableChannel, clients);
         }
     }
     private void OnConnection(int cnnid)
@@ -95,7 +110,15 @@ public class Server : MonoBehaviour
         clients.Find(x => x.connectionID == cnnID).playerName = playerN;
         Send("CNN|" + playerN + '|' + cnnID, reliableChannel, clients);
     }
-
+    private void OnMyPosition(int cnnID, float x, float y)
+    {
+        clients.Find(c => c.connectionID == cnnID).position = new Vector3(x,y,0);
+    }
+    private void OnDisconnection(int id)
+    {
+        clients.Remove(clients.Find(x => x.connectionID == id));
+        Send("DC|" + id, reliableChannel, clients);
+    }
     private void Send(string message, int channelID,int plID)
     {
         List<ServerClient> c = new List<ServerClient>();
@@ -109,7 +132,6 @@ public class Server : MonoBehaviour
         foreach (ServerClient item in c)
         {
             NetworkTransport.Send(hostID, item.connectionID, channelID, msg, message.Length * sizeof(char), out error);
-            Debug.Log("Sent message");
         }
     }
 }
